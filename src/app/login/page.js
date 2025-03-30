@@ -1,18 +1,31 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import Link from 'next/link'
+import { useState } from "react";
+import { supabase } from "@/lib/supabase";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { GiftIcon, Mail, Moon, Sun } from "lucide-react";
+import Loader from "@/components/Loader";
+import { useTheme } from "next-themes";
+
 
 export default function Login() {
-  const [email, setEmail] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [message, setMessage] = useState('')
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const {theme, setTheme} = useTheme()
 
   const handleLogin = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setMessage('')
+    e.preventDefault();
+    setLoading(true);
+    setMessage("");
 
     try {
       const { error } = await supabase.auth.signInWithOtp({
@@ -20,70 +33,71 @@ export default function Login() {
         options: {
           emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
-      })
+      });
 
-      if (error) throw error
+      if (error) throw error;
 
-      setMessage('Check your email for the magic link!')
-      setEmail('')
+      setMessage("Check your email for the magic link!");
+      setEmail("");
     } catch (error) {
-      setMessage(error.message)
+      setMessage(error.message);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
+
+  const toggleTheme = () => {
+    setTheme(theme === 'dark' ? 'light' : 'dark');
+  };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Sign in to your account
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Or{' '}
-            <Link href="/signup" className="font-medium text-indigo-600 hover:text-indigo-500">
-              create a new account
-            </Link>
-          </p>
-        </div>
-        <form className="mt-8 space-y-6" onSubmit={handleLogin}>
-          <div className="rounded-md shadow-sm -space-y-px">
-            <div>
-              <label htmlFor="email-address" className="sr-only">
-                Email address
-              </label>
+    <div className=" flex flex-col items-center justify-center min-h-screen">
+      <Button onClick={toggleTheme} variant="outline" className=' absolute top-5 right-5 p-4 h-10 w-10 rounded-sm'>{theme === 'dark' ? <Moon/> : <Sun/>}</Button>
+      <Card className={"max-w-sm w-full shadow-lg "}>
+        <CardHeader className="text-center">
+          <CardTitle className="text-3xl font-bold">Headline Hero</CardTitle>
+          <CardDescription className="text-md text-muted-foreground">
+            AI-Powered Newsletter Headlines
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CardTitle className="text-lg font-bold mb-1">
+          Welcome 
+          </CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            Continue with your email
+          </CardDescription>
+          <form onSubmit={handleLogin} className="flex flex-col gap-4 mt-5">
+            <div className=" flex flex-col gap-3">
+              <p className="text-md">Email Address</p>
               <input
-                id="email-address"
-                name="email"
                 type="email"
-                autoComplete="email"
-                required
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.com"
+                className="border p-2 rounded"
+                required
               />
             </div>
-          </div>
 
-          {message && (
-            <div className={`text-sm text-center ${message.includes('Check your email') ? 'text-green-600' : 'text-red-600'}`}>
-              {message}
-            </div>
-          )}
-
-          <div>
-            <button
+            <Button
               type="submit"
               disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+              className="h-10"
             >
-              {loading ? 'Sending magic link...' : 'Send magic link'}
-            </button>
+              {loading ? <Loader/> : <span className="flex gap-2 text-md font-medium items-center"><Mail/> Continue with Email</span>}
+            </Button>
+            {message && <p className=" text-sm text-center">{message}</p>}
+          </form>
+          <div className=" bg-neutral-100 dark:bg-neutral-800 p-4 box-border rounded-md mt-6 flex flex-row gap-2 items-start">
+            <GiftIcon className="h-6 w-6 mt-1" strokeWidth={1.5} />
+            <div className="flex flex-col gap-1">
+              <p className=" text-[14px] font-semibold">New users get 10 free credits</p>
+              <p className=" text-[14px] text-muted-foreground">Perfect for trying out our services</p>
+            </div>
           </div>
-        </form>
-      </div>
+        </CardContent>
+      </Card>
     </div>
-  )
-} 
+  );
+}
