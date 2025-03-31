@@ -51,7 +51,7 @@ export default function Login() {
   };
 
   return (
-    <div className=" flex flex-col items-center justify-center min-h-screen">
+    <div className=" flex flex-col items-center justify-center min-h-screen" suppressHydrationWarning>
       <Button onClick={toggleTheme} variant="outline" className=' absolute top-5 right-5 p-4 h-10 w-10 rounded-sm'>{theme === 'dark' ? <Moon/> : <Sun/>}</Button>
       <Card className={"max-w-sm w-full shadow-lg "}>
         <CardHeader className="text-center">
@@ -90,7 +90,7 @@ export default function Login() {
             {message && <p className=" text-sm text-center">{message}</p>}
           </form>
           <div className=" bg-neutral-100 dark:bg-neutral-800 p-4 box-border rounded-md mt-6 flex flex-row gap-2 items-start">
-            <GiftIcon className="h-6 w-6 mt-1" strokeWidth={1.5} />
+            <GiftIcon className="h-6 w-6 " strokeWidth={1.5} />
             <div className="flex flex-col gap-1">
               <p className=" text-[14px] font-semibold">New users get 10 free credits</p>
               <p className=" text-[14px] text-muted-foreground">Perfect for trying out our services</p>

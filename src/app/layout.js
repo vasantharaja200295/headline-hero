@@ -1,10 +1,10 @@
-
+import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 import { ThemeProvider } from "./Theme-provider";
-import { Toaster } from "@/components/ui/sonner"
+import { Toaster } from "@/components/ui/sonner";
 import { Inter } from "next/font/google";
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
   title: "HeadlineHero - AI-Powered Newsletter Headlines",
@@ -15,8 +15,8 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
-        <head />
-        <body className={inter.className}>
+      <body className={inter.className}>
+        <TooltipProvider>
           <ThemeProvider
             attribute="class"
             defaultTheme="system"
@@ -28,9 +28,11 @@ export default function RootLayout({ children }) {
               toastOptions={{
                 className: " font-inter",
                 duration: 3000,
-              }}/>
+              }}
+            />
           </ThemeProvider>
-        </body>
-      </html>
+        </TooltipProvider>
+      </body>
+    </html>
   );
 }

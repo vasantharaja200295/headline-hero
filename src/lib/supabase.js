@@ -4,6 +4,21 @@ import { supabase } from '../utils/supabase/client'
 export { supabase }
 
 // Helper functions for database operations
+
+export const logout = async () => {
+  try {
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      console.error('Logout error:', error)
+      return false
+    }
+    return true
+  } catch (error) {
+    console.error('Logout error:', error)
+    return false
+  }
+}
+
 export const getUser = async () => {
   try {
     const { data: { user }, error } = await supabase.auth.getUser()
@@ -25,8 +40,6 @@ export const getCredits = async (userId) => {
       .select('amount')
       .eq('user_id', userId)
       .single()
-
-      console.log(data)
     
     if (data.error) {
       console.error('Get credits error:', error)
