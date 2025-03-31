@@ -8,7 +8,6 @@ export default function DashboardLayout({ children }) {
     <SidebarProvider >
       <AppSidebar />
       <main className="flex flex-col w-full h-screen overflow-hidden">
-        <SidebarTrigger className="h-14 w-14"/>
         {children}
       </main>
     </SidebarProvider>
