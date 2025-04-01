@@ -1,6 +1,12 @@
 "use client";
 
-import * as React from "react";
+import { useEffect, useState, useMemo } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { LogOut, Moon, Sun } from "lucide-react";
+import { useTheme } from "next-themes";
+import clsx from "clsx";
+
 import {
   Sidebar,
   SidebarContent,
@@ -9,113 +15,223 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { NAV_PATHS } from "@/utils/constants/paths";
-import Link from "next/link";
-import { redirect, usePathname } from "next/navigation";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { getUser, logout } from "@/lib/supabase";
-import { NAV_ITEMS as data } from "@/utils/constants/navItems";
-import { LogOut, Moon, Sun } from "lucide-react";
-import { useTheme } from "next-themes";
-import clsx from "clsx";
+import { NAV_PATHS } from "@/utils/constants/paths";
+import { NAV_ITEMS } from "@/utils/constants/navItems";
 
+// Configuration and constants
+const THEME_CONFIG = {
+  dark: {
+    icon: <Moon className="h-4 w-4" />,
+    logoClasses: "bg-white text-black",
+  },
+  light: {
+    icon: <Sun className="h-4 w-4" />,
+    logoClasses: "bg-black text-white",
+  },
+};
+
+// Utility functions
+const getInitials = (email) => {
+  return email?.[0]?.toUpperCase() || '?';
+};
+
+const getDisplayName = (email) => {
+  return email?.split("@")[0] || 'User';
+};
+
+// UI Components
+const Logo = ({ isExpanded, theme }) => {
+  const themeConfig = THEME_CONFIG[theme] || THEME_CONFIG.light;
+  
+  return (
+    <div className="flex items-center space-x-2 py-2">
+      <h2 className={clsx("font-bold p-1 rounded-sm", themeConfig.logoClasses)}>
+        HH
+      </h2>
+      {isExpanded && <span className="text-xl font-medium">HeadlineHero</span>}
+    </div>
+  );
+};
+
+const ThemeToggle = ({ theme, toggleTheme, showLabel }) => {
+  const themeConfig = THEME_CONFIG[theme] || THEME_CONFIG.light;
+  
+  return (
+    <SidebarMenuButton
+      className={clsx(
+        "flex h-10 items-center border space-x-2 w-full",
+        showLabel ? "justify-between" : "justify-center"
+      )}
+      onClick={toggleTheme}
+    >
+      {showLabel && <span>Theme</span>}
+      {themeConfig.icon}
+    </SidebarMenuButton>
+  );
+};
+
+const UserProfile = ({ user, showLabel }) => (
+  <div 
+    className={clsx(
+      "flex items-center space-x-2 px-2 py-2",
+      !showLabel && "justify-center"
+    )}
+  >
+    <Avatar className="h-8 w-8">
+      <AvatarFallback>
+        {getInitials(user?.email)}
+      </AvatarFallback>
+    </Avatar>
+    {showLabel && (
+      <span className="text-sm font-medium">
+        {getDisplayName(user?.email)}
+      </span>
+    )}
+  </div>
+);
+
+const LogoutButton = ({ showLabel, onLogout, theme }) => (
+  <SidebarMenuButton
+    className={clsx(
+      "flex h-10 items-center space-x-2 w-full border",
+      "dark:bg-white bg-black text-white dark:text-black",
+      showLabel ? "justify-between" : "justify-center"
+    )}
+    onClick={onLogout}
+  >
+    {showLabel && <span>Logout</span>}
+    <LogOut className="h-4 w-4" />
+  </SidebarMenuButton>
+);
+
+const NavigationItem = ({ item, isActive, showLabel }) => (
+  <Link href={item.href}>
+    <SidebarMenuItem>
+      <SidebarMenuButton isActive={isActive} className="h-10 w-full">
+        {item.icon}
+        {showLabel && <span>{item.name}</span>}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  </Link>
+);
+
+const NavigationItems = ({ items, currentPath, showLabels }) => {
+  // Memoize the rendering of navigation items for performance
+  const navigationElements = useMemo(() => {
+    return items.map((item) => (
+      <NavigationItem 
+        key={item.name}
+        item={item}
+        isActive={currentPath === item.href}
+        showLabel={showLabels}
+      />
+    ));
+  }, [items, currentPath, showLabels]);
+
+  return (
+    <SidebarMenu className={!showLabels ? "flex items-center justify-center" : ""}>
+      {navigationElements}
+    </SidebarMenu>
+  );
+};
+
+// Main Component
 export function AppSidebar({ ...props }) {
-  const { state } = useSidebar();
+  const { state, isMobile } = useSidebar();
   const pathName = usePathname();
-  const [user, setUser] = React.useState(null);
+  const [user, setUser] = useState(null);
   const { theme, setTheme } = useTheme();
-
-  const fetchUser = async () => {
-    const user = await getUser();
-    setUser(user);
+  
+  // Derived state
+  const displayConfig = useMemo(() => ({
+    isExpanded: state === "expanded",
+    showLabels: state === "expanded" || isMobile,
+    layoutMode: isMobile ? "mobile" : "desktop",
+    sidebarType: isMobile ? "offcanvas" : "icon",
+    sidebarWidth: isMobile ? "w-full max-w-[280px]" : "w-auto",
+  }), [state, isMobile]);
+  
+  // Event handlers
+  const handleLogout = () => {
+    logout();
+    window.location.href = NAV_PATHS.LOGIN;
   };
-
-  React.useEffect(() => {
-    fetchUser();
-  }, []);
-
-  const isExpanded = state === "expanded";
 
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
   };
+  
+  // Side effects
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const userData = await getUser();
+        setUser(userData);
+      } catch (error) {
+        console.error("Failed to fetch user data:", error);
+        // Could implement fallback behavior here
+      }
+    };
+    
+    fetchUser();
+  }, []);
 
+  // Render
   return (
-    <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader>
-        <SidebarMenu
-          className={!isExpanded && "flex items-center justify-center  "}
-        >
+    <Sidebar 
+      collapsible={displayConfig.sidebarType} 
+      className={clsx(
+        "fixed inset-y-0 left-0 z-50",
+        displayConfig.sidebarWidth
+      )}
+      {...props}
+    >
+      <SidebarHeader className="border-b border-border/10">
+        <SidebarMenu className={!displayConfig.isExpanded ? "flex items-center" : "px-2"}>
           <SidebarMenuItem>
-            <div className="flex flex-row-reverse items-center justify-between space-x-2">
-              <SidebarTrigger className="rounded-xs" />
-              {isExpanded && (
-                <span className="text-xl font-medium">HeadlineHero</span>
-              )}
-            </div>
+            <Logo 
+              isExpanded={displayConfig.showLabels} 
+              theme={theme} 
+            />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      <SidebarContent className="px-2 mt-1 py-2 border-t-[1px] border-t-neutral-200 dark:border-t-neutral-700">
-        <SidebarMenu
-          className={!isExpanded && "flex items-center justify-center"}
-        >
-          {data.map((item) => (
-            <Link key={item.name} href={item.href}>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={pathName === item.href}
-                  className={"h-10"}
-                >
-                  {item.icon}
-                  {isExpanded && <span>{item.name}</span>}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </Link>
-          ))}
-        </SidebarMenu>
+
+      <SidebarContent className="flex flex-col flex-1 px-2 py-4">
+        <NavigationItems 
+          items={NAV_ITEMS} 
+          currentPath={pathName} 
+          showLabels={displayConfig.showLabels} 
+        />
       </SidebarContent>
-      <SidebarFooter>
-        <SidebarMenu
-          className={!isExpanded && "flex items-center justify-center"}
-        >
+
+      <SidebarFooter className="border-t border-border/10 px-2 py-4">
+        <SidebarMenu className={!displayConfig.showLabels ? "flex items-center justify-center" : ""}>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              className={clsx(
-                "flex h-10 items-center justify-between border-2 my-2 space-x-2",
-                !isExpanded && "justify-center")}
-              onClick={() => {
-                toggleTheme();
-              }}
-            >
-              {isExpanded && <span>Theme</span>}
-              {theme === "dark" ? <Moon /> : <Sun />}
-            </SidebarMenuButton>
+            <ThemeToggle 
+              theme={theme} 
+              toggleTheme={toggleTheme} 
+              showLabel={displayConfig.showLabels} 
+            />
           </SidebarMenuItem>
-          <SidebarMenuItem className={"flex items-center space-x-2"}>
-            <Avatar>
-              <AvatarFallback>{user?.email[0].toUpperCase()}</AvatarFallback>
-            </Avatar>
-            {isExpanded && (
-              <span className="text-sm font-medium">
-                {user?.email?.split("@")[0]}
-              </span>
-            )}
-          </SidebarMenuItem>
+
           <SidebarMenuItem>
-            <SidebarMenuButton
-              className={"flex h-10 items-center justify-between space-x-2"}
-              onClick={() => {
-                logout();
-                redirect(NAV_PATHS.LOGIN);
-              }}
-            >
-              {isExpanded && <span>Logout</span>}
-              <LogOut />
-            </SidebarMenuButton>
+            <UserProfile 
+              user={user} 
+              showLabel={displayConfig.showLabels} 
+            />
+          </SidebarMenuItem>
+
+          <SidebarMenuItem>
+            <LogoutButton 
+              showLabel={displayConfig.showLabels} 
+              onLogout={handleLogout}
+              theme={theme}
+            />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

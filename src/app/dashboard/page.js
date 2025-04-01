@@ -1,197 +1,360 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
-import { generateHeadlines } from '@/lib/gemini'
-import { getCredits, updateCredits, saveHeadlineHistory } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useState, useMemo, useEffect } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import * as z from "zod";
 
+// UI Components
+import { Textarea } from "@/components/ui/textarea";
+import { Slider } from "@/components/ui/slider";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { HEADLINE_CONFIG, TONE_OPTIONS } from "@/utils/constants";
+import { calculateReadingTime, calculateCost, countWords } from "@/utils/functions";
+import { Copy, Check, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { generateHeadlines } from "@/lib/gemini";
+import { getUser, getCredits, updateCredits } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+
+// Form schema - separated for better maintainability
+const createFormSchema = () => {
+  return z.object({
+    content: z.string().min(
+      HEADLINE_CONFIG.minContentLength, 
+      `Content must be at least ${HEADLINE_CONFIG.minContentLength} characters`
+    ),
+    numHeadlines: z.number().min(HEADLINE_CONFIG.min).max(HEADLINE_CONFIG.max),
+    tone: z.string(),
+  });
+};
+
+// Component parts
+const PageHeader = () => (
+  <div>
+    <h1 className="text-2xl md:text-3xl font-bold mb-2">Generate Headlines</h1>
+    <p className="text-gray-500 mb-6">Generate engaging headlines for your content</p>
+  </div>
+);
+
+const ContentField = ({ control, name }) => (
+  <FormField
+    control={control}
+    name={name}
+    render={({ field }) => (
+      <FormItem>
+        <FormLabel className="text-md font-bold">Newsletter Content</FormLabel>
+        <FormControl>
+          <div className="flex flex-col">
+            <Textarea
+              placeholder="Paste your newsletter content here..."
+              className="min-h-[200px] lg:min-h-[340px] resize-none text-sm"
+              {...field}
+            />
+            <div className="mt-2 text-sm text-gray-500">
+              Words: {countWords(field.value)} | Reading time: {calculateReadingTime(field.value)} min
+            </div>
+          </div>
+        </FormControl>
+        <FormMessage />
+      </FormItem>
+    )}
+  />
+);
+
+const HeadlinesField = ({ control, name, onSliderChange }) => (
+  <FormField
+    control={control}
+    name={name}
+    render={({ field }) => (
+      <FormItem>
+        <FormLabel>Number of Headlines ({HEADLINE_CONFIG.min}-{HEADLINE_CONFIG.max})</FormLabel>
+        <FormControl>
+          <Slider
+            min={HEADLINE_CONFIG.min}
+            max={HEADLINE_CONFIG.max}
+            step={1}
+            defaultValue={[field.value]}
+            onValueChange={(vals) => onSliderChange(vals[0])}
+            className="py-4"
+          />
+        </FormControl>
+        <div className="text-sm text-gray-500">
+          {field.value} headlines will be generated
+        </div>
+      </FormItem>
+    )}
+  />
+);
+
+const ToneField = ({ control, name }) => (
+  <FormField
+    control={control}
+    name={name}
+    render={({ field }) => (
+      <FormItem>
+        <FormLabel>Tone</FormLabel>
+        <Select onValueChange={field.onChange} defaultValue={field.value}>
+          <FormControl>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Select a tone" />
+            </SelectTrigger>
+          </FormControl>
+          <SelectContent>
+            {TONE_OPTIONS.map((tone) => (
+              <SelectItem key={tone.value} value={tone.value}>
+                {tone.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FormItem>
+    )}
+  />
+);
+
+const FormActions = ({ costPerGeneration, availableCredits = 0, isLoading }) => {
+  const insufficientCredits = costPerGeneration > availableCredits;
+  
+  return (
+    <div className="border rounded-lg p-4 space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-500">Available Credits:</span>
+          <span className={`font-semibold ${insufficientCredits ? 'text-red-500' : ''}`}>
+            {availableCredits} credits
+          </span>
+        </div>
+        <div className="text-sm text-gray-500">
+          Cost per generation: {costPerGeneration} credits
+        </div>
+      </div>
+      <Button 
+        type="submit" 
+        className="w-full" 
+        disabled={isLoading || insufficientCredits}
+      >
+        {isLoading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Generating Headlines...
+          </>
+        ) : insufficientCredits ? (
+          "Insufficient Credits"
+        ) : (
+          "Generate Headlines"
+        )}
+      </Button>
+    </div>
+  );
+};
+
+const HeadlineCard = ({ headline, index }) => {
+  const [copied, setCopied] = useState(false);
+
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(headline);
+      setCopied(true);
+      toast.success("Headline copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast.error("Failed to copy headline");
+    }
+  };
+
+  return (
+    <div className="relative group border rounded-lg p-4 hover:border-gray-400 transition-all">
+      <div className="pr-8"> 
+        <p className="text-sm font-medium line-clamp-3">{headline}</p>
+      </div>
+      <button
+        onClick={copyToClipboard}
+        className="absolute top-3 right-3 p-1.5 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+        title="Copy headline"
+      >
+        {copied ? (
+          <Check className="h-4 w-4 text-green-500" />
+        ) : (
+          <Copy className="h-4 w-4" />
+        )}
+      </button>
+    </div>
+  );
+};
+
+const ResultsPanel = ({ headlines = [] }) => {
+  const hasHeadlines = headlines.length > 0;
+
+  return (
+    <div className="lg:col-span-2 border rounded-lg p-4 lg:p-6 h-full">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-semibold">Generated Headlines</h2>
+        {hasHeadlines && (
+          <span className="text-sm text-gray-500">
+            {headlines.length} headlines generated
+          </span>
+        )}
+      </div>
+
+      {hasHeadlines ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 auto-rows-min">
+          {headlines.map((headline, index) => (
+            <HeadlineCard key={index} headline={headline} index={index} />
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center h-[300px] text-center">
+          <p className="text-gray-500 mb-2">Your generated headlines will appear here</p>
+          <p className="text-sm text-gray-400">Fill in the form and click Generate Headlines to start</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Main Component
 export default function Dashboard() {
-  const router = useRouter()
-  const [user, setUser] = useState(null)
-  const [credits, setCredits] = useState(0)
-  const [loading, setLoading] = useState(false)
-  const [headlines, setHeadlines] = useState([])
-  const [formData, setFormData] = useState({
-    topic: '',
-    audience: '',
-    tone: 'professional',
-    keywords: '',
-    count: 5
-  })
+  const router = useRouter();
+  const [costPerGeneration, setCostPerGeneration] = useState(HEADLINE_CONFIG.baseCost);
+  const [headlines, setHeadlines] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [availableCredits, setAvailableCredits] = useState(0);
+  const formSchema = useMemo(() => createFormSchema(), []);
 
   useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.push('/login')
-        return
+    const fetchUserCredits = async () => {
+      try {
+        const user = await getUser();
+        if (!user) {
+          router.push('/login');
+          return;
+        }
+
+        const credits = await getCredits(user.id);
+        setAvailableCredits(credits);
+      } catch (error) {
+        toast.error('Failed to fetch your credits. Please refresh the page.');
       }
-      setUser(user)
-      const userCredits = await getCredits(user.id)
-      setCredits(userCredits)
-    }
-    getUser()
-  }, [router])
+    };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setLoading(true)
+    fetchUserCredits();
+  }, [router]);
 
+  // Initialize form
+  const form = useForm({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      content: "",
+      numHeadlines: HEADLINE_CONFIG.default,
+      tone: TONE_OPTIONS[0].value,
+    },
+  });
+
+  // Event handlers
+  const handleSliderChange = (value) => {
+    const newCost = calculateCost(value);
+    setCostPerGeneration(newCost);
+    form.setValue("numHeadlines", value);
+  };
+
+  // Form submission handler
+  const onSubmit = async (values) => {
     try {
-      // Check if user has enough credits
-      if (credits < formData.count) {
-        alert('Not enough credits. Please purchase more credits.')
-        return
+      setIsLoading(true);
+      
+      // Check user session
+      const user = await getUser();
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+
+      // Get current credits
+      const currentCredits = await getCredits(user.id);
+      if (currentCredits < costPerGeneration) {
+        throw new Error('Insufficient credits');
       }
 
       // Generate headlines
-      const generatedHeadlines = await generateHeadlines(formData)
+      const generatedHeadlines = await generateHeadlines({
+        content: values.content,
+        numHeadlines: values.numHeadlines,
+        tone: values.tone,
+      });
 
       // Update credits
-      const newCredits = credits - formData.count
-      await updateCredits(user.id, newCredits)
-      setCredits(newCredits)
+      const newCredits = currentCredits - costPerGeneration;
+      const updatedCredits = await updateCredits(user.id, newCredits);
+      
+      if (!updatedCredits) {
+        throw new Error('Failed to update credits');
+      }
 
-      // Save to history
-      await saveHeadlineHistory(user.id, {
-        ...formData,
-        results: generatedHeadlines
-      })
-
-      setHeadlines(generatedHeadlines)
+      // Update UI
+      setHeadlines(generatedHeadlines);
+      setAvailableCredits(newCredits);
+      toast.success(`Successfully generated ${generatedHeadlines.length} headlines`);
     } catch (error) {
-      console.error('Error generating headlines:', error)
-      alert('Error generating headlines. Please try again.')
+      if (error.message === 'Insufficient credits') {
+        toast.error('You need more credits to generate headlines');
+      } else {
+        toast.error(error.message || 'Failed to generate headlines');
+      }
     } finally {
-      setLoading(false)
+      setIsLoading(false);
     }
-  }
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }))
-  }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="mt-2 text-sm text-gray-600">
-            Available credits: {credits}
-          </p>
-        </div>
+    <div className="min-h-full bg-background overflow-auto md:pb-8">
+      <div className="container mx-auto lg:p-6 max-w-full">
+        <PageHeader />
+        
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+          <div className="lg:col-span-1">
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <div className="border rounded-lg p-4 space-y-4">
+                  <ContentField control={form.control} name="content" />
+                </div>
 
-        <div className="bg-white shadow rounded-lg p-6">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="topic" className="block text-sm font-medium text-gray-700">
-                Topic
-              </label>
-              <input
-                type="text"
-                name="topic"
-                id="topic"
-                required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                value={formData.topic}
-                onChange={handleInputChange}
-              />
-            </div>
+                <div className="border rounded-lg p-4 space-y-4">
+                  <HeadlinesField 
+                    control={form.control} 
+                    name="numHeadlines" 
+                    onSliderChange={handleSliderChange} 
+                  />
+                  <ToneField control={form.control} name="tone" />
+                </div>
 
-            <div>
-              <label htmlFor="audience" className="block text-sm font-medium text-gray-700">
-                Target Audience
-              </label>
-              <input
-                type="text"
-                name="audience"
-                id="audience"
-                required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                value={formData.audience}
-                onChange={handleInputChange}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="tone" className="block text-sm font-medium text-gray-700">
-                Tone
-              </label>
-              <select
-                name="tone"
-                id="tone"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                value={formData.tone}
-                onChange={handleInputChange}
-              >
-                <option value="professional">Professional</option>
-                <option value="casual">Casual</option>
-                <option value="friendly">Friendly</option>
-                <option value="urgent">Urgent</option>
-              </select>
-            </div>
-
-            <div>
-              <label htmlFor="keywords" className="block text-sm font-medium text-gray-700">
-                Keywords (comma-separated)
-              </label>
-              <input
-                type="text"
-                name="keywords"
-                id="keywords"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                value={formData.keywords}
-                onChange={handleInputChange}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="count" className="block text-sm font-medium text-gray-700">
-                Number of Headlines
-              </label>
-              <input
-                type="number"
-                name="count"
-                id="count"
-                min="1"
-                max="30"
-                required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                value={formData.count}
-                onChange={handleInputChange}
-              />
-            </div>
-
-            <div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-              >
-                {loading ? 'Generating...' : 'Generate Headlines'}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {headlines.length > 0 && (
-          <div className="mt-8 bg-white shadow rounded-lg p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">Generated Headlines</h2>
-            <ul className="space-y-2">
-              {headlines.map((headline, index) => (
-                <li key={index} className="p-3 bg-gray-50 rounded-md">
-                  {headline}
-                </li>
-              ))}
-            </ul>
+                <FormActions 
+                  costPerGeneration={costPerGeneration}
+                  availableCredits={availableCredits}
+                  isLoading={isLoading}
+                />
+              </form>
+            </Form>
           </div>
-        )}
+
+          <ResultsPanel headlines={headlines} />
+        </div>
       </div>
     </div>
-  )
-} 
+  );
+}

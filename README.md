@@ -52,7 +52,7 @@ NEXT_PUBLIC_RAZORPAY_KEY_ID=your_razorpay_key_id
 RAZORPAY_KEY_SECRET=your_razorpay_key_secret
 
 # Google Gemini API
-GOOGLE_GEMINI_API_KEY=your_gemini_api_key
+NEXT_PUBLIC_GEMINI_API_KEY=your_gemini_api_key
 
 # Site URL
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
