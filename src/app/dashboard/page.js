@@ -285,34 +285,57 @@ export default function Dashboard() {
         return;
       }
 
-      // Get current credits
+      // Verify current credits before generation
       const currentCredits = await getCredits(user.id);
-      if (currentCredits < costPerGeneration) {
+      if (!currentCredits || currentCredits < costPerGeneration) {
         throw new Error('Insufficient credits');
       }
 
-      // Generate headlines
-      const generatedHeadlines = await generateHeadlines({
-        content: values.content,
-        numHeadlines: values.numHeadlines,
-        tone: values.tone,
-      });
+      let generatedHeadlines;
+      try {
+        // Generate headlines
+        generatedHeadlines = await generateHeadlines({
+          content: values.content,
+          numHeadlines: values.numHeadlines,
+          tone: values.tone,
+        });
 
-      // Update credits
-      const newCredits = currentCredits - costPerGeneration;
-      const updatedCredits = await updateCredits(user.id, newCredits);
-      
-      if (!updatedCredits) {
-        throw new Error('Failed to update credits');
+        // Validate generated headlines
+        if (!Array.isArray(generatedHeadlines) || generatedHeadlines.length === 0) {
+          throw new Error('Failed to generate valid headlines');
+        }
+
+        // Double check credits before updating to prevent race conditions
+        const verifyCredits = await getCredits(user.id);
+        if (verifyCredits < costPerGeneration) {
+          throw new Error('Insufficient credits');
+        }
+
+        // Only update credits after successful generation
+        const newCredits = verifyCredits - costPerGeneration;
+        const updatedCredits = await updateCredits(user.id, newCredits);
+        
+        if (!updatedCredits) {
+          throw new Error('Failed to update credits');
+        }
+
+        // Update UI only after successful credit update
+        setHeadlines(generatedHeadlines);
+        setAvailableCredits(newCredits);
+        toast.success(`Successfully generated ${generatedHeadlines.length} headlines`);
+      } catch (error) {
+        // If generation or credit update fails, ensure we don't update UI
+        setHeadlines([]);
+        // Refresh credits display to ensure accuracy
+        const refreshedCredits = await getCredits(user.id);
+        setAvailableCredits(refreshedCredits);
+        throw error; // Re-throw to be caught by outer catch block
       }
-
-      // Update UI
-      setHeadlines(generatedHeadlines);
-      setAvailableCredits(newCredits);
-      toast.success(`Successfully generated ${generatedHeadlines.length} headlines`);
     } catch (error) {
       if (error.message === 'Insufficient credits') {
         toast.error('You need more credits to generate headlines');
+      } else if (error.message === 'Failed to generate valid headlines') {
+        toast.error('Failed to generate headlines. Please try again with different content.');
       } else {
         toast.error(error.message || 'Failed to generate headlines');
       }
