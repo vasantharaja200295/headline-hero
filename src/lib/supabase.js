@@ -35,34 +35,60 @@ export const getUser = async () => {
 
 export const getCredits = async (userId) => {
   try {
-    const data = await supabase
+    const { data, error } = await supabase
       .from('credits')
       .select('amount')
       .eq('user_id', userId)
       .single()
     
-    if (data.error) {
+    if (error) {
       console.error('Get credits error:', error)
-      return 0
+      return null
     }
-    return data?.data.amount || 0
+    return data?.amount || 0
   } catch (error) {
     console.error('Get credits error:', error)
-    return 0
+    return null
   }
 }
 
 export const updateCredits = async (userId, amount) => {
   try {
+    // Validate amount
+    if (typeof amount !== 'number' || isNaN(amount)) {
+      throw new Error('Invalid credit amount')
+    }
+
+    // Start a transaction
+    const { data: transaction, error: transactionError } = await supabase
+      .from('credit_transactions')
+      .insert({
+        user_id: userId,
+        amount: amount,
+        status: 'pending',
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single()
+
+    if (transactionError) {
+      throw new Error('Failed to create transaction')
+    }
+
     // First, check if the user already has a credits record
-    const { data: existingCredits } = await supabase
+    const { data: existingCredits, error: existingError } = await supabase
       .from('credits')
       .select('id, amount')
       .eq('user_id', userId)
       .single()
     
+    if (existingError && existingError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+      throw existingError
+    }
+
+    let result
     if (existingCredits) {
-      // If record exists, use update instead of upsert
+      // If record exists, use update
       const { data, error } = await supabase
         .from('credits')
         .update({
@@ -71,12 +97,12 @@ export const updateCredits = async (userId, amount) => {
         })
         .eq('user_id', userId)
         .select()
+        .single()
       
       if (error) {
-        console.error('Update credits error:', error)
-        return null
+        throw error
       }
-      return data
+      result = data
     } else {
       // If no record exists, insert a new one
       const { data, error } = await supabase
@@ -87,18 +113,38 @@ export const updateCredits = async (userId, amount) => {
           updated_at: new Date().toISOString()
         })
         .select()
+        .single()
       
       if (error) {
-        console.error('Update credits error:', error)
-        return null
+        throw error
       }
-      return data
+      result = data
     }
+
+    // Update transaction status
+    await supabase
+      .from('credit_transactions')
+      .update({ status: 'completed' })
+      .eq('id', transaction.id)
+
+    return result
   } catch (error) {
+    // If there's an error, update transaction status to failed
+    if (transaction?.id) {
+      await supabase
+        .from('credit_transactions')
+        .update({ 
+          status: 'failed',
+          error_message: error.message 
+        })
+        .eq('id', transaction.id)
+    }
+
     console.error('Update credits error:', error)
     return null
   }
 }
+
 export const saveHeadlineHistory = async (userId, headlineData) => {
   try {
     const { data, error } = await supabase

@@ -217,7 +217,7 @@ const ResultsPanel = ({ headlines = [] }) => {
           {headlines.map((headline, index) => (
             <HeadlineCard key={index} headline={headline} index={index} />
           ))}
-        </div>
+            </div>
       ) : (
         <div className="flex flex-col items-center justify-center h-[300px] text-center">
           <p className="text-gray-500 mb-2">Your generated headlines will appear here</p>

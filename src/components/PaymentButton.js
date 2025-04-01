@@ -2,14 +2,23 @@
 
 import { useState } from 'react'
 import Script from 'next/script'
+import { Button } from '@/components/ui/button'
+import { Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 
-export default function PaymentButton({ amount, onSuccess }) {
+export default function PaymentButton({ amount, onSuccess, className, disabled }) {
   const [loading, setLoading] = useState(false)
 
   const handlePayment = async () => {
     try {
       setLoading(true)
       
+      // Validate amount
+      if (!amount || amount <= 0) {
+        throw new Error('Invalid payment amount')
+      }
+
       // Create order through our API route
       const response = await fetch('/api/payment/create-order', {
         method: 'POST',
@@ -18,7 +27,8 @@ export default function PaymentButton({ amount, onSuccess }) {
       })
       
       if (!response.ok) {
-        throw new Error('Failed to create order')
+        const error = await response.json()
+        throw new Error(error.message || 'Failed to create order')
       }
       
       const order = await response.json()
@@ -47,16 +57,16 @@ export default function PaymentButton({ amount, onSuccess }) {
             const data = await verifyResponse.json()
             if (data.success) {
               onSuccess?.()
+              toast.success('Payment successful!')
             } else {
-              throw new Error('Payment verification failed')
+              throw new Error(data.error || 'Payment verification failed')
             }
           } catch (error) {
             console.error('Payment verification error:', error)
-            alert('Payment verification failed. Please contact support.')
+            toast.error(error.message || 'Payment verification failed. Please contact support.')
           }
         },
         prefill: {
-          // Pre-fill customer details if available
           name: 'Customer Name',
           email: 'customer@example.com'
         },
@@ -70,11 +80,11 @@ export default function PaymentButton({ amount, onSuccess }) {
       
       rzp.on('payment.failed', function(response) {
         console.error('Payment failed:', response.error)
-        alert('Payment failed. Please try again.')
+        toast.error('Payment failed. Please try again.')
       })
     } catch (error) {
       console.error('Payment error:', error)
-      alert('Failed to initiate payment. Please try again.')
+      toast.error(error.message || 'Failed to initiate payment. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -86,13 +96,20 @@ export default function PaymentButton({ amount, onSuccess }) {
         src="https://checkout.razorpay.com/v1/checkout.js"
         strategy="lazyOnload"
       />
-      <button
+      <Button
         onClick={handlePayment}
-        disabled={loading}
-        className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 disabled:opacity-50"
+        disabled={loading || disabled}
+        className={cn("w-full", className)}
       >
-        {loading ? 'Processing...' : 'Buy Credits'}
-      </button>
+        {loading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Processing...
+          </>
+        ) : (
+          'Buy Credits'
+        )}
+      </Button>
     </>
   )
 } 
